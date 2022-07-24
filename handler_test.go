@@ -19,6 +19,6 @@ func BenchmarkHandlers(b *testing.B) {
 
 	t := xena.SetupTestSuite(b, deduplicateWindow, jpsMin, jpsMax, duplicateProbability)
 
-	h0 := v0.NewHandler(deduplicateWindow, jpsMax/3)
+	h0 := v0.NewHandler(deduplicateWindow, jpsMax)
 	b.Run("v0", t.PerformTest(h0))
 }
