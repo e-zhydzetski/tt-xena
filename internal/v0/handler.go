@@ -2,10 +2,12 @@ package v0
 
 import (
 	"fmt"
-	xena "github.com/e-zhydzetski/tt-xena"
-	"github.com/google/uuid"
 	"math"
 	"time"
+
+	"github.com/google/uuid"
+
+	xena "github.com/e-zhydzetski/tt-xena"
 )
 
 func NewHandler(dedupWindow time.Duration, jpsMax int) *Handler {
@@ -24,8 +26,6 @@ type Handler struct {
 	cleanIdx         int
 }
 
-var zeroUUID = uuid.UUID{}
-
 func (h *Handler) Handle(job xena.Job) error {
 	now := job.Timestamp
 
@@ -37,14 +37,14 @@ func (h *Handler) Handle(job xena.Job) error {
 	h.jobTimestampByID[job.ID] = job.Timestamp
 
 	h.cleanIdx = (h.cleanIdx + 1) % len(h.cleanerBuffer)
-	oldId := h.cleanerBuffer[h.cleanIdx]
-	if oldId != zeroUUID {
-		oldTimestamp, exists := h.jobTimestampByID[oldId]
+	oldID := h.cleanerBuffer[h.cleanIdx]
+	if oldID != (uuid.UUID{}) {
+		oldTimestamp, exists := h.jobTimestampByID[oldID]
 		if exists && oldTimestamp > now-h.dedupWindowNanos {
 			fmt.Println("WARNING! Job removed within deduplication window")
 			// we can't do anything as cleanerBuffer has fixed size
 		}
-		delete(h.jobTimestampByID, oldId)
+		delete(h.jobTimestampByID, oldID)
 	}
 	h.cleanerBuffer[h.cleanIdx] = job.ID
 
