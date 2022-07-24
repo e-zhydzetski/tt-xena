@@ -14,7 +14,7 @@ import (
 )
 
 func BenchmarkHandlers(b *testing.B) {
-	t := SetupTest(b, 100, 500)
+	t := SetupTest(b, 10, 1000)
 
 	h0 := v0.NewHandler()
 	b.Run("v0", t.PerformTest(h0))
@@ -31,19 +31,17 @@ func SetupTest(b *testing.B, jpsMin, jpsMax int) *Test {
 	if jpsMin >= jpsMax {
 		b.Fatal("Jobs rate invalid")
 	}
-	timeShiftMinNanos := int64(time.Second) / int64(jpsMax)
-	timeShiftMaxNanos := int64(time.Second) / int64(jpsMin)
 
 	return &Test{
-		timeShiftMinNanos: timeShiftMinNanos,
-		timeShiftMaxNanos: timeShiftMaxNanos,
+		jpsMin: int64(jpsMin),
+		jpsMax: int64(jpsMax),
 	}
 }
 
 type Test struct {
-	curTimeNanos      int64 // start from 0
-	timeShiftMaxNanos int64
-	timeShiftMinNanos int64
+	curTimeNanos int64 // start from 0
+	jpsMin       int64
+	jpsMax       int64
 
 	activeJobIdx int
 	jobs         []xena.Job
@@ -73,7 +71,8 @@ func (t *Test) PerformTest(handler xena.Handler) func(b *testing.B) {
 func (t *Test) nextJob() xena.Job {
 	t.activeJobIdx++
 	if len(t.jobs) <= t.activeJobIdx {
-		t.curTimeNanos += t.randomTimeShift()
+		ts := t.randomTimeShift()
+		t.curTimeNanos += ts
 		j := xena.Job{
 			ID:        uuid.New(), // TODO add random duplicates
 			Timestamp: t.curTimeNanos,
@@ -86,7 +85,8 @@ func (t *Test) nextJob() xena.Job {
 
 //nolint:gosec // unsecure rand is ok here
 func (t *Test) randomTimeShift() int64 {
-	return rand.Int63n(t.timeShiftMaxNanos-t.timeShiftMinNanos) + t.timeShiftMinNanos
+	jps := rand.Int63n(t.jpsMax-t.jpsMin) + t.jpsMin
+	return int64(time.Second) / jps
 }
 
 func (t *Test) recordJobResult(res error) {
