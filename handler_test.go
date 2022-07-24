@@ -14,13 +14,13 @@ import (
 )
 
 func BenchmarkHandlers(b *testing.B) {
-	t := SetupTest(b, 10, 1000)
+	t := SetupTest(b, time.Second*5, 10, 100, 30)
 
 	h0 := v0.NewHandler()
 	b.Run("v0", t.PerformTest(h0))
 }
 
-func SetupTest(b *testing.B, jpsMin, jpsMax int) *Test {
+func SetupTest(b *testing.B, dedupWindow time.Duration, jpsMin, jpsMax, dupProb int) *Test {
 	seed := time.Now().UnixNano()
 	if s, ok := os.LookupEnv("RAND_SEED"); ok {
 		seed, _ = strconv.ParseInt(s, 10, 64)
@@ -32,22 +32,36 @@ func SetupTest(b *testing.B, jpsMin, jpsMax int) *Test {
 		b.Fatal("Jobs rate invalid")
 	}
 
+	if dupProb < 0 || dupProb > 100 {
+		b.Fatal("Duplicate probability should be in [0;100]")
+	}
+
 	return &Test{
-		jpsMin: int64(jpsMin),
-		jpsMax: int64(jpsMax),
+		dedupWindowNanos: dedupWindow.Nanoseconds(),
+		jpsMin:           int64(jpsMin),
+		jpsMax:           int64(jpsMax),
+		dupProb:          dupProb,
 	}
 }
 
 type Test struct {
-	curTimeNanos int64 // start from 0
-	jpsMin       int64
-	jpsMax       int64
+	curTimeNanos int64 // start from 0, only relative value make difference
 
-	activeJobIdx int
-	jobs         []xena.Job
-	results      []error
+	dedupWindowNanos int64 // deduplication windows in nanos
+	jpsMin           int64 // min jobs per second
+	jpsMax           int64 // max jobs per second
+	dupProb          int   // desired duplicate probability in percents
+
+	activeJobIdx        int
+	jobs                []duplicateAwareJob
+	leftWindowBorderIdx int // index of latest non-duplicate job in deduplication interval, not reset, its ID used when duplicate needed
 
 	errorsTotal uint
+}
+
+type duplicateAwareJob struct {
+	job       xena.Job
+	duplicate bool
 }
 
 func (t *Test) PerformTest(handler xena.Handler) func(b *testing.B) {
@@ -64,23 +78,44 @@ func (t *Test) PerformTest(handler xena.Handler) func(b *testing.B) {
 			t.recordJobResult(res)
 			b.StartTimer()
 		}
-		t.report(b.Logf)
+		t.printSessionReport(b.Logf)
 	}
 }
 
 func (t *Test) nextJob() xena.Job {
 	t.activeJobIdx++
-	if len(t.jobs) <= t.activeJobIdx {
+	if len(t.jobs) <= t.activeJobIdx { // out of cache
 		ts := t.randomTimeShift()
 		t.curTimeNanos += ts
-		j := xena.Job{
-			ID:        uuid.New(), // TODO add random duplicates
-			Timestamp: t.curTimeNanos,
+
+		j := duplicateAwareJob{ // make unique job by default
+			job: xena.Job{
+				ID:        uuid.New(),
+				Timestamp: t.curTimeNanos,
+			},
+			duplicate: false,
 		}
+
+		if t.randomDuplicate() { // transform to duplicate job if possible
+			leftBorder := t.curTimeNanos - t.dedupWindowNanos
+			for t.leftWindowBorderIdx < t.activeJobIdx {
+				// move window, skip duplicates
+				// duplicate can't be used to create another duplicate, as it should be ignored by handler
+				if leftBorder > t.jobs[t.leftWindowBorderIdx].job.Timestamp || t.jobs[t.leftWindowBorderIdx].duplicate {
+					t.leftWindowBorderIdx++
+					continue
+				}
+				break
+			}
+			if t.leftWindowBorderIdx < t.activeJobIdx {
+				j.duplicate = true
+				j.job.ID = t.jobs[t.leftWindowBorderIdx].job.ID // TODO maybe get random non-duplicate job ID in [leftWindowBorderIdx;activeJobIdx)
+			}
+		}
+
 		t.jobs = append(t.jobs, j)
-		t.results = append(t.results, nil)
 	}
-	return t.jobs[t.activeJobIdx]
+	return t.jobs[t.activeJobIdx].job
 }
 
 //nolint:gosec // unsecure rand is ok here
@@ -89,8 +124,16 @@ func (t *Test) randomTimeShift() int64 {
 	return int64(time.Second) / jps
 }
 
+//nolint:gosec // unsecure rand is ok here
+func (t *Test) randomDuplicate() bool {
+	return rand.Intn(100) < t.dupProb
+}
+
 func (t *Test) recordJobResult(res error) {
-	expected := t.results[t.activeJobIdx]
+	var expected error
+	if t.jobs[t.activeJobIdx].duplicate {
+		expected = xena.ErrDuplicate
+	}
 	if expected != res {
 		t.errorsTotal++
 	}
@@ -101,7 +144,7 @@ func (t *Test) reset() {
 	t.errorsTotal = 0
 }
 
-func (t *Test) report(logf func(format string, args ...any)) {
+func (t *Test) printSessionReport(logf func(format string, args ...any)) {
 	logf("Jobs: %d, errors: %d\n", t.activeJobIdx+1, t.errorsTotal)
 	logf("Avg rate: %f j/s", float64(t.activeJobIdx+1)/time.Duration(t.curTimeNanos).Seconds())
 }
