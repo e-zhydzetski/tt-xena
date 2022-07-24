@@ -11,6 +11,6 @@ func NewHandler() *Handler {
 type Handler struct {
 }
 
-func (h *Handler) Handle(job xena.CompressedJob) error {
+func (h *Handler) Handle(job xena.Job) error {
 	return nil
 }
