@@ -38,7 +38,7 @@ func (h *Handler) Handle(job xena.Job) error {
 
 	h.cleanIdx = (h.cleanIdx + 1) % len(h.cleanerBuffer)
 	oldID := h.cleanerBuffer[h.cleanIdx]
-	if oldID != (uuid.UUID{}) {
+	if oldID.Version() != 0 {
 		oldTimestamp, exists := h.jobTimestampByID[oldID]
 		if exists && oldTimestamp > now-h.dedupWindowNanos {
 			fmt.Println("WARNING! Job removed within deduplication window")
