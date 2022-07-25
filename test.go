@@ -154,7 +154,7 @@ func (t *TestSuite) reset() {
 }
 
 func (t *TestSuite) printSessionReport(logf func(format string, args ...any)) {
-	logf("Max heap growth: %d bytes\n", t.maxHeapGrowth)
-	logf("Jobs: %d, errors: %d\n", t.activeJobIdx+1, t.errorsTotal)
+	logf("Jobs: %d, errors: %d", t.activeJobIdx+1, t.errorsTotal)
 	logf("Avg rate: %f j/s", float64(t.activeJobIdx+1)/time.Duration(t.curTimeNanos).Seconds())
+	logf("Max heap growth: %d bytes", t.maxHeapGrowth)
 }
