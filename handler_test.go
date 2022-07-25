@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	v2 "github.com/e-zhydzetski/tt-xena/internal/v2"
+
 	v1 "github.com/e-zhydzetski/tt-xena/internal/v1"
 
 	xena "github.com/e-zhydzetski/tt-xena"
@@ -38,6 +40,10 @@ func BenchmarkHandlers(b *testing.B) {
 
 	b.Run("v1", t.PerformTest(func() xena.Handler {
 		return v1.NewHandler(deduplicateWindow)
+	}))
+
+	b.Run("v2", t.PerformTest(func() xena.Handler {
+		return v2.NewHandler(deduplicateWindow)
 	}))
 }
 
