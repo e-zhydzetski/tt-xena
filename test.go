@@ -81,6 +81,7 @@ func (t *TestSuite) PerformTest(hf func() Handler) func(b *testing.B) {
 			t.recordJobResult(res)
 			b.StartTimer()
 		}
+		b.StopTimer()
 		if b.N > 1 { // skip first launch report
 			t.printSessionReport(b.Logf)
 		}
