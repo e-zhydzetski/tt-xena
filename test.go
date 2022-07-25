@@ -4,8 +4,8 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,8 +28,6 @@ func SetupTestSuite(b *testing.B, dedupWindow time.Duration, jpsMin, jpsMax, dup
 		b.Fatal("Duplicate probability should be in [0;100]")
 	}
 
-	debug.SetGCPercent(-1) // only manual control
-
 	return &TestSuite{
 		dedupWindowNanos: dedupWindow.Nanoseconds(),
 		jpsMin:           int64(jpsMin),
@@ -51,8 +49,7 @@ type TestSuite struct {
 
 	leftWindowBorderIdx int // index of latest non-duplicate job in deduplication interval, not reset, its ID used when duplicate needed
 
-	errorsTotal   uint
-	maxHeapGrowth uint64
+	errorsTotal uint
 }
 
 type duplicateAwareJob struct {
@@ -61,10 +58,18 @@ type duplicateAwareJob struct {
 }
 
 func (t *TestSuite) PerformTest(hf func() Handler) func(b *testing.B) {
-	initHeapSize := gcAndGetHeapSizeBytes()
-	handler := hf()
 	t.reset()
+
+	initAlloc := getTotalAllocBytes()
+	handler := hf()
+	constructionAlloc := getTotalAllocBytes() - initAlloc
+
+	once := sync.Once{}
 	return func(b *testing.B) {
+		once.Do(func() {
+			b.Logf("Construction heap size: %d bytes", constructionAlloc)
+		})
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			b.StopTimer()
 			j := t.nextJob()
@@ -74,20 +79,18 @@ func (t *TestSuite) PerformTest(hf func() Handler) func(b *testing.B) {
 
 			b.StopTimer()
 			t.recordJobResult(res)
-			if hg := gcAndGetHeapSizeBytes() - initHeapSize; hg > t.maxHeapGrowth {
-				t.maxHeapGrowth = hg
-			}
 			b.StartTimer()
 		}
-		t.printSessionReport(b.Logf)
+		if b.N > 1 { // skip first launch report
+			t.printSessionReport(b.Logf)
+		}
 	}
 }
 
-func gcAndGetHeapSizeBytes() uint64 {
-	runtime.GC()
+func getTotalAllocBytes() uint64 {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	return m.HeapAlloc
+	return m.TotalAlloc
 }
 
 func (t *TestSuite) nextJob() Job {
@@ -150,11 +153,9 @@ func (t *TestSuite) recordJobResult(res error) {
 func (t *TestSuite) reset() {
 	t.activeJobIdx = -1
 	t.errorsTotal = 0
-	t.maxHeapGrowth = 0
 }
 
 func (t *TestSuite) printSessionReport(logf func(format string, args ...any)) {
 	logf("Jobs: %d, errors: %d", t.activeJobIdx+1, t.errorsTotal)
 	logf("Avg rate: %f j/s", float64(t.activeJobIdx+1)/time.Duration(t.curTimeNanos).Seconds())
-	logf("Max heap growth: %d bytes", t.maxHeapGrowth)
 }

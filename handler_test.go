@@ -29,11 +29,6 @@ func BenchmarkHandlers(b *testing.B) {
 		return NoopHandler{}
 	}))
 
-	// to check warmup results, heap footprint should be near to zero and may be used as zero point for real tests
-	b.Run("warm up check", t.PerformTest(func() xena.Handler {
-		return NoopHandler{}
-	}))
-
 	b.Run("v0", t.PerformTest(func() xena.Handler {
 		return v0.NewHandler(deduplicateWindow, jpsMax)
 	}))

@@ -16,7 +16,4 @@ Randomization seed may be passed as _RAND_SEED_ env variable.
 
 ## Run bench
 
-`go test -bench=. -cpu=1 -benchtime=10000x -benchmem`
-
-Test uses manual GC invocation after each job processing for most accurate heap usage analyse, 
-so tests make take a while - be patient or decrease benchtime...
+`go test -bench=. -cpu=1 -benchtime=100000x -benchmem`
