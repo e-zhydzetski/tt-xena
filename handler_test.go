@@ -1,6 +1,7 @@
 package xena_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -43,6 +44,8 @@ func BenchmarkHandlers(b *testing.B) {
 type NoopHandler struct {
 }
 
+var ErrNoop = errors.New("noop")
+
 func (n NoopHandler) Handle(_ xena.Job) error {
-	return nil
+	return ErrNoop
 }
