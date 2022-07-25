@@ -3,6 +3,8 @@ package xena
 import (
 	"math/rand"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"testing"
 	"time"
@@ -26,6 +28,8 @@ func SetupTestSuite(b *testing.B, dedupWindow time.Duration, jpsMin, jpsMax, dup
 		b.Fatal("Duplicate probability should be in [0;100]")
 	}
 
+	debug.SetGCPercent(-1) // only manual control
+
 	return &TestSuite{
 		dedupWindowNanos: dedupWindow.Nanoseconds(),
 		jpsMin:           int64(jpsMin),
@@ -47,7 +51,8 @@ type TestSuite struct {
 
 	leftWindowBorderIdx int // index of latest non-duplicate job in deduplication interval, not reset, its ID used when duplicate needed
 
-	errorsTotal uint
+	errorsTotal   uint
+	maxHeapGrowth uint64
 }
 
 type duplicateAwareJob struct {
@@ -55,7 +60,9 @@ type duplicateAwareJob struct {
 	duplicate bool
 }
 
-func (t *TestSuite) PerformTest(handler Handler) func(b *testing.B) {
+func (t *TestSuite) PerformTest(hf func() Handler) func(b *testing.B) {
+	initHeapSize := gcAndGetHeapSizeBytes()
+	handler := hf()
 	t.reset()
 	return func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
@@ -67,10 +74,20 @@ func (t *TestSuite) PerformTest(handler Handler) func(b *testing.B) {
 
 			b.StopTimer()
 			t.recordJobResult(res)
+			if hg := gcAndGetHeapSizeBytes() - initHeapSize; hg > t.maxHeapGrowth {
+				t.maxHeapGrowth = hg
+			}
 			b.StartTimer()
 		}
 		t.printSessionReport(b.Logf)
 	}
+}
+
+func gcAndGetHeapSizeBytes() uint64 {
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m.HeapAlloc
 }
 
 func (t *TestSuite) nextJob() Job {
@@ -133,9 +150,11 @@ func (t *TestSuite) recordJobResult(res error) {
 func (t *TestSuite) reset() {
 	t.activeJobIdx = -1
 	t.errorsTotal = 0
+	t.maxHeapGrowth = 0
 }
 
 func (t *TestSuite) printSessionReport(logf func(format string, args ...any)) {
+	logf("Max heap growth: %d bytes\n", t.maxHeapGrowth)
 	logf("Jobs: %d, errors: %d\n", t.activeJobIdx+1, t.errorsTotal)
 	logf("Avg rate: %f j/s", float64(t.activeJobIdx+1)/time.Duration(t.curTimeNanos).Seconds())
 }
