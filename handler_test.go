@@ -1,6 +1,7 @@
 package xena_test
 
 import (
+	v1 "github.com/e-zhydzetski/tt-xena/internal/v1"
 	"testing"
 	"time"
 
@@ -21,4 +22,7 @@ func BenchmarkHandlers(b *testing.B) {
 
 	h0 := v0.NewHandler(deduplicateWindow, jpsMax)
 	b.Run("v0", t.PerformTest(h0))
+
+	h1 := v1.NewHandler(deduplicateWindow)
+	b.Run("v1", t.PerformTest(h1))
 }
