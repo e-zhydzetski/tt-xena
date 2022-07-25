@@ -1,8 +1,9 @@
 package v1
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 
 	xena "github.com/e-zhydzetski/tt-xena"
 )

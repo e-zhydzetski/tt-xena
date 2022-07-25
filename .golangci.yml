@@ -44,7 +44,7 @@ linters:
     - funlen
     - gochecknoinits
     - goconst
-    - gocritic
+#    - gocritic # https://github.com/golangci/golangci-lint/issues/2649
     - gocyclo
     - gofmt
     - goimports
